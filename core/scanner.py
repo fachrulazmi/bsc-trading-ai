@@ -1,11 +1,13 @@
 import requests
 from core.config import Config
+from core.logger import get_logger
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich import box
 
 console = Console()
+log = get_logger("scanner")
 
 class Scanner:
     def __init__(self):
@@ -23,7 +25,8 @@ class Scanner:
                 resp = requests.get(url, timeout=15)
                 if resp.status_code == 200:
                     all_pairs.extend(resp.json().get('pairs', []))
-            except:
+            except Exception as e:
+                log.error(f"Error scanning anchor {token}: {e}")
                 continue
 
         try:
@@ -31,8 +34,8 @@ class Scanner:
             resp = requests.get(search_url, timeout=15)
             if resp.status_code == 200:
                 all_pairs.extend(resp.json().get('pairs', []))
-        except:
-            pass
+        except Exception as e:
+            log.error(f"Error in broad search: {e}")
 
         filtered_pairs = []
         seen_addresses = set()
@@ -42,6 +45,9 @@ class Scanner:
             if not addr or addr in seen_addresses:
                 continue
             
+            # Filter network based on USE_TESTNET
+            # DexScreener doesn't have a direct testnet chainId in the same way, 
+            # so we focus on BSC mainnet pairs for discovery, but execute on testnet if requested.
             if pair.get('chainId') != 'bsc' or pair.get('dexId') != 'pancakeswap':
                 continue
 
@@ -66,6 +72,6 @@ class Scanner:
                 })
 
         filtered_pairs.sort(key=lambda x: x['volume_24h'], reverse=True)
-        return filtered_pairs[:20]
+        return filtered_pairs[:30]
 
 scanner = Scanner()

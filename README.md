@@ -1,18 +1,49 @@
-# BSC AI Scalping Bot (Scan-Analyze-Execute)
+# BSC AI Scalping Bot (Scan-Analyze-Execute) - Pro Edition
 
-Bot trading scalping otomatis untuk Binance Smart Chain (BSC) menggunakan **Gemini 1.5 Flash (Free Tier)** untuk analisis teknikal mendalam.
+Bot trading scalping otomatis untuk Binance Smart Chain (BSC) menggunakan **Gemini AI** untuk analisis teknikal mendalam dan **RTK AI** untuk efisiensi token.
 
-## Alur Kerja 3-Fase
-1.  **Phase 1 — SCAN**: Memindai seluruh pair di PancakeSwap BSC yang memiliki Volume 24 jam > $1M dan likuiditas memadai.
-2.  **Phase 2 — ANALISIS**: Menghitung indikator (EMA, RSI, MACD) dan menggunakan Gemini AI untuk menginterpretasi sinyal, menentukan TP/SL, dan menilai Risk/Reward.
-3.  **Phase 3 — EKSEKUSI**: Eksekusi trade otomatis di BSC dengan manajemen risiko ketat.
+## ⚠️ DISCLAIMER RISIKO FINANSIAL
+**PENTING:** Perdagangan aset kripto memiliki risiko yang sangat tinggi. Bot ini disediakan **hanya untuk tujuan edukasi dan eksperimen**. **KAMI TIDAK BERTANGGUNG JAWAB** atas kerugian finansial, kesalahan sistem, atau kegagalan transaksi yang mungkin terjadi. Gunakan modal yang Anda siap untuk kehilangan. **Uji coba di Mode Testnet sangat disarankan sebelum menggunakan dana asli.**
 
-## Persiapan
-1. Dapatkan Gemini API Key GRATIS di [Google AI Studio](https://aistudio.google.com/).
-2. Install dependencies: `pip install -r requirements.txt`.
-3. Konfigurasi file `.env` (gunakan `.env.example` sebagai template).
+## Fitur Utama & Keunggulan
+- **Real-Time Dashboard**: Antarmuka terminal modern (4 FPS) dengan pembaruan harga dan profit instan.
+- **Background Parallel Scanning**: Memindai peluang pasar secara terus-menerus tanpa mengganggu monitoring harga.
+- **Gemini AI Analysis**: Menggunakan kecerdasan buatan untuk menentukan entri, TP, dan SL berdasarkan indikator teknis (EMA, RSI, MACD).
+- **RTK (Rust Token Killer)**: Kompresi data cerdas untuk menghemat hingga 90% kuota token API Gemini.
+- **Customizable Global Take Profit**: Amankan keuntungan seluruh portofolio secara otomatis.
+- **Persistent Storage & Logs**: Menyimpan posisi terbuka ke `data/positions.json` dan mencatat seluruh audit trail ke `logs/trade_bot.log`.
+- **Graceful Shutdown**: Penanganan thread yang aman saat bot dihentikan (Ctrl+C).
 
-## Keunggulan Solusi 1 (Gemini Free Tier)
-- **Gratis Selamanya**: Menggunakan kuota gratis dari Google.
-- **Stabil**: Rate limit yang cukup luas (15 request/menit).
-- **Cepat**: Gemini 1.5 Flash dirancang untuk respon instan.
+## Persyaratan Sistem
+- **Python**: v3.10 ke atas (Teruji di v3.11/v3.12).
+- **Node**: RPC/WSS (Websocket) BSC yang stabil.
+- **Koneksi**: Internet stabil (disarankan VPS untuk penggunaan live).
+
+## Instalasi
+1. Clone atau download folder bot ini.
+2. Dapatkan API Key Gemini GRATIS di [Google AI Studio](https://aistudio.google.com/).
+3. Install semua library yang dibutuhkan:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Salin file `.env.example` menjadi `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+5. Isi data sensitif Anda di `.env` (Private Key, Wallet Address, Gemini Key).
+
+## Cara Menjalankan
+```bash
+py main.py
+```
+
+## Struktur Folder
+- `/core`: Logika inti sistem (Strategi, Scanner, AI, Network).
+- `/data`: Database transaksi aktif dan riwayat.
+- `/logs`: File log aktivitas sistem untuk audit.
+- `/scripts`: Script bantuan untuk pengujian manual.
+
+## Keamanan & Kontrol
+- **`DRY_RUN=True`**: Bot hanya mensimulasikan transaksi (tanpa uang asli).
+- **`USE_TESTNET=True`**: Menggunakan jaringan BSC Testnet.
+- **`AI_COOLDOWN`**: Jeda antar analisis untuk mencegah limitasi API Gemini.

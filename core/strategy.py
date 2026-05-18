@@ -1,10 +1,6 @@
-from core.config import Config
-from core.scanner import scanner
-from core.analyzer import analyzer
-from core.dex import dex
-import time
 import json
 import os
+import time
 import random
 import threading
 from rich.console import Console
@@ -12,8 +8,14 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from rich import box
+from core.config import Config
+from core.scanner import scanner
+from core.analyzer import analyzer
+from core.dex import dex
+from core.logger import get_logger
 
 console = Console()
+log = get_logger("strategy")
 
 class ScalpingStrategy:
     def __init__(self):
@@ -22,22 +24,25 @@ class ScalpingStrategy:
         self.active_positions = self.load_positions()
         self.last_scan_results = []
         self.current_prices = {}
-        self.logs = []
-        self.is_scanning = False
+        self.ui_logs = []
+        self._stop_event = threading.Event()
+        self._scan_lock = threading.Lock()
+        self.is_scanning_flag = False
         self.scroll_index = 0
         self.scroll_counter = 0
         self.pos_scroll_index = 0
         self.pos_scroll_counter = 0
 
-    def log(self, message, style="white"):
+    def add_ui_log(self, message):
         timestamp = time.strftime('%H:%M:%S')
-        self.logs.append(f"[{timestamp}] {message}")
-        if len(self.logs) > 10:
-            self.logs.pop(0)
+        self.ui_logs.append(f"[{timestamp}] {message}")
+        if len(self.ui_logs) > 12:
+            self.ui_logs.pop(0)
+        log.info(message)
 
     def get_logs_panel(self):
-        log_text = "\n".join(self.logs)
-        status = "[bold green]● PARALLEL SCANNING[/bold green]" if self.is_scanning else "[dim]○ IDLE[/dim]"
+        log_text = "\n".join(self.ui_logs)
+        status = "[bold green]● PARALLEL SCANNING[/bold green]" if self.is_scanning_flag else "[dim]○ IDLE[/dim]"
         return Panel(log_text, title=f"Background Parallel Monitor | {status}", border_style="dim white", box=box.ROUNDED)
 
     def load_positions(self):
@@ -45,8 +50,8 @@ class ScalpingStrategy:
             try:
                 with open(self.db_path, 'r') as f:
                     return json.load(f)
-            except:
-                return {}
+            except Exception as e:
+                log.error(f"Failed to load positions: {e}")
         return {}
 
     def save_positions(self):
@@ -55,7 +60,7 @@ class ScalpingStrategy:
             with open(self.db_path, 'w') as f:
                 json.dump(self.active_positions, f, indent=4)
         except Exception as e:
-            self.log(f"Error saving positions: {e}", "red")
+            log.error(f"Error saving positions: {e}")
 
     def log_analysis(self, pair, technicals, ai_result):
         try:
@@ -83,7 +88,7 @@ class ScalpingStrategy:
             with open(self.history_path, 'w') as f:
                 json.dump(history[-500:], f, indent=4)
         except Exception as e:
-            self.log(f"Failed to log history: {e}", "red")
+            log.error(f"Failed to log analysis: {e}")
 
     def get_market_table(self):
         table = Table(title="Live Market Scan (Auto-Scrolling)", box=box.ROUNDED, border_style="blue", expand=True)
@@ -111,9 +116,7 @@ class ScalpingStrategy:
             chg = p['price_change_1h']
             live_price = self.current_prices.get(p['address'].lower(), float(p['price_usd']))
             table.add_row(
-                p['symbol'],
-                f"${live_price:.2f}",
-                p['address'], 
+                p['symbol'], f"${live_price:.2f}", p['address'], 
                 f"${p['volume_24h']:,.0f}", f"${p['liquidity']:,.0f}",
                 f"{'[green]' if chg > 0 else '[red]'}{chg:.2f}%"
             )
@@ -134,10 +137,7 @@ class ScalpingStrategy:
             total_profit += profit
             color = "green" if profit > 0 else "red"
             all_rows.append([
-                pos['symbol'], 
-                f"${pos['entry']:.2f}",
-                f"{pos['tp']:.2f}",
-                f"{pos['sl']:.2f}",
+                pos['symbol'], f"${pos['entry']:.2f}", f"{pos['tp']:.2f}", f"{pos['sl']:.2f}",
                 f"[{color}]{profit:.2f}%[/{color}]"
             ])
 
@@ -159,79 +159,84 @@ class ScalpingStrategy:
             table.add_row(*row)
         return table
 
+    def stop(self):
+        self._stop_event.set()
+        log.info("Shutdown signal received.")
+
     def run_cycle_background(self):
-        if self.is_scanning: return
+        if self.is_scanning_flag: return
         thread = threading.Thread(target=self.run_cycle)
         thread.daemon = True
         thread.start()
 
     def run_cycle(self):
-        self.is_scanning = True
-        self.log(f"Memulai market scan untuk {Config.WSS_URL}...")
+        if not self._scan_lock.acquire(blocking=False):
+            return
+        
+        self.is_scanning_flag = True
+        self.add_ui_log("Memulai market scan...")
         try:
             results = scanner.scan_pancakeswap_pairs()
             if results:
                 self.last_scan_results = results
                 for p in results:
+                    if self._stop_event.is_set(): return
                     self.current_prices[p['address'].lower()] = float(p['price_usd'])
             
             for pair in self.last_scan_results:
-                if pair['address'] in self.active_positions:
-                    continue
+                if self._stop_event.is_set(): break
+                if pair['address'] in self.active_positions: continue
 
-                self.log(f"AI Analis: Mengevaluasi {pair['symbol']}...")
+                self.add_ui_log(f"AI Analis: {pair['symbol']}...")
                 base_price = float(pair['price_usd'])
                 mock_history = [base_price * (1 + random.uniform(-0.002, 0.002)) for _ in range(30)]
                 technicals = analyzer.calculate_indicators(mock_history)
+                
                 ai_result = analyzer.analyze_with_gemini(pair, technicals)
                 self.log_analysis(pair, technicals, ai_result)
-                self.log(f"Keputusan {pair['symbol']}: {ai_result['decision']}")
+                
                 if ai_result['decision'] == "BUY":
                     self.execute_trade(pair, ai_result)
+                
+                # Gemini Rate Limiter
+                time.sleep(Config.AI_COOLDOWN) 
         except Exception as e:
-            self.log(f"Scan error: {e}", "red")
+            log.exception("Error in scan cycle")
+            self.add_ui_log(f"Scan error: {e}")
         finally:
-            self.is_scanning = False
-            self.log("Scan selesai. Menyiapkan siklus berikutnya...")
-            time.sleep(5)
+            self.is_scanning_flag = False
+            self._scan_lock.release()
+            self.add_ui_log("Cycle complete.")
 
     def execute_trade(self, pair, ai_result):
         token_address = pair['baseToken']
-        self.log(f"🚀 EKSEKUSI TRADE: {pair['symbol']}")
+        self.add_ui_log(f"🚀 BELI: {pair['symbol']}")
         tx = dex.buy_token(token_address, Config.MAX_BNB_PER_TRADE)
         if tx:
             self.active_positions[pair['address']] = {
-                "symbol": pair['symbol'],
-                "entry": float(pair['price_usd']),
-                "tp": ai_result['tp'],
-                "sl": ai_result['sl'],
-                "baseToken": token_address
+                "symbol": pair['symbol'], "entry": float(pair['price_usd']),
+                "tp": ai_result['tp'], "sl": ai_result['sl'], "baseToken": token_address
             }
             self.save_positions()
-            self.log(f"✅ Beli berhasil: {pair['symbol']} | TP: {ai_result['tp']}")
+            self.add_ui_log(f"✅ Berhasil: {pair['symbol']}")
         else:
-            self.log(f"❌ Beli gagal: {pair['symbol']}", "red")
+            self.add_ui_log(f"❌ Gagal: {pair['symbol']}")
 
     def monitor_positions(self):
         for p in self.last_scan_results:
             addr = p['address'].lower()
             old = self.current_prices.get(addr, float(p['price_usd']))
             self.current_prices[addr] = old * (1 + random.uniform(-0.0001, 0.0001))
-            p['volume_24h'] *= (1 + random.uniform(-0.00005, 0.00005))
-            p['liquidity'] *= (1 + random.uniform(-0.00005, 0.00005))
-            p['price_change_1h'] += random.uniform(-0.01, 0.01)
 
-        if not self.active_positions:
-            return
+        if not self.active_positions: return
 
         total_profit = 0
         for addr, pos in self.active_positions.items():
             curr = self.current_prices.get(addr.lower(), pos['entry'])
-            profit = ((curr - pos['entry']) / pos['entry']) * 100
-            total_profit += profit
+            total_profit += ((curr - pos['entry']) / pos['entry']) * 100
 
         if total_profit >= Config.GLOBAL_TP_PCT:
-            self.log(f"🚀 GLOBAL TAKE PROFIT TERCAPAI ({total_profit:.2f}%)! Menjual semua aset...", "bold green")
+            self.add_ui_log(f"🚀 GLOBAL TP REACHED! Closing all.")
             all_addrs = list(self.active_positions.keys())
             for addr in all_addrs:
                 self.execute_sell(addr, self.active_positions[addr], "GLOBAL TP")
@@ -245,13 +250,14 @@ class ScalpingStrategy:
                 self.execute_sell(addr, pos, "STOP LOSS")
 
     def execute_sell(self, addr, pos, reason):
-        self.log(f"🔔 {reason}: Menjual {pos['symbol']}...")
+        self.add_ui_log(f"🔔 {reason}: Menjual {pos['symbol']}...")
         tx = dex.sell_token(pos.get('baseToken'), 0)
         if tx:
-            self.log(f"💰 Posisi ditutup: {pos['symbol']} ({reason})")
-            del self.active_positions[addr]
+            self.add_ui_log(f"💰 Closed: {pos['symbol']}")
+            if addr in self.active_positions:
+                del self.active_positions[addr]
             self.save_positions()
         else:
-            self.log(f"❌ Gagal menjual: {pos['symbol']}", "red")
+            self.add_ui_log(f"❌ Gagal jual: {pos['symbol']}")
 
 strategy = ScalpingStrategy()

@@ -21,6 +21,7 @@ class Config:
     DEFAULT_STOP_LOSS_PCT = 2.0
     DEFAULT_TAKE_PROFIT_PCT = 5.0
     GLOBAL_TP_PCT = float(os.getenv("GLOBAL_TP_PCT", 4.0))
+    AI_COOLDOWN = int(os.getenv("AI_COOLDOWN", 10))
     
     DRY_RUN = os.getenv("DRY_RUN", "True").lower() == "true"
     USE_TESTNET = os.getenv("USE_TESTNET", "False").lower() == "true"
