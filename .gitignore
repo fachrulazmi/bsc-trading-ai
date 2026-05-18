@@ -1,0 +1,27 @@
+# Environment
+.env
+.env.*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Logs & output
+*.log
+logs/*.**
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (opsional, uncomment kalau perlu)
+*.csv
+*.json
+output/*.**
+data/*.**
